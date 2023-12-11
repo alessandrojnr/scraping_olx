@@ -1,4 +1,5 @@
 import json
+from time import sleep
 import pandas as pd
 import requests
 import lxml.html
@@ -37,11 +38,10 @@ class Olx:
         self.json_data_list = []
 
     def scrap_anuncios(self,type):
-        x = 1
         for preco in self.precos:
-            for i in range(1,101):
+            print(preco)
+            for i in range(1,2):
                 url = "https://www.olx.com.br/"+self.tipo[type]+self.prefixo+self.regiao + preco + "&o="+ str(i)
-                #print(url)
                 r = requests.get(url, headers= self.headers)
 
                 if 'Ops! Nenhum anúncio foi encontrado.' in r.text:
@@ -51,30 +51,33 @@ class Olx:
                     data = html.xpath('//script[@id="__NEXT_DATA__"]/text()')
                     json_data = json.loads(data[0])
                     anuncios = json_data.get('props').get('pageProps').get('ads')
+                    y = 1
                     try:
                         for anuncio in anuncios:
                             url_anuncio = anuncio.get('url')
                             if url_anuncio and url_anuncio not in self.url_anuncios:
                                 self.url_anuncios.append(url_anuncio)
                                 self.scrap_dados_anuncios(url_anuncio)
-                                print(url_anuncio)
-                                print(x)   
-                                x += 1      
+                                print( y,  url_anuncio )
+                                y += 1
+
                     except Exception as e:
                         print(e)
+                        return 
                        
 
 
     def scrap_dados_anuncios(self, url):
         r = requests.get(url, headers= self.headers)
-        print(r.status_code)
+        if r.status_code != 200:
+            print('Erro', r.status_code, url)
         if r.status_code == 200:
             html = lxml.html.fromstring(r.text)
             meta = self.scrap_meta_script(html)
             initial = self.scrap_initial_script(html)
             taxa_condominio = ''
             iptu = ''
-            print(taxa_condominio, iptu)
+    
             if 'properties' in initial['ad']:
                 for property in initial['ad']['properties']:
                     if 'name' in property:
@@ -89,16 +92,16 @@ class Olx:
                     'id_ambiente': meta[0]['page']['detail']['list_id'],
                     'tipo_imovel': meta[0]['page']['adDetail']['subCategory'],
                     'titulo': meta[0]['page']['adDetail']['subject'],
-                    'rua' : initial['ad']['location']['address'],
-                    'bairro': initial['ad']['location']['neighbourhood'],
-                    'cidade': initial['ad']['location']['municipality'],
-                    'estado': initial['ad']['location']['uf'],
-                    'cep': initial['ad']['location']['zipcode'],
-                    'preco': meta[0]['page']['adDetail']['price'],
-                    'area_privativa': meta[0]['page']['adDetail']['size'],
-                    'quartos': meta[0]['page']['adDetail']['rooms'],
-                    'banheiros': meta[0]['page']['adDetail']['bathrooms'],
-                    'garagens': meta[0]['page']['adDetail']['garage_spaces'],
+                    'rua' : initial['ad']['location'].get('address',''),
+                    'bairro': initial['ad']['location'].get('neighbourhood',''),
+                    'cidade': initial['ad']['location'].get('municipality',''),
+                    'estado': initial['ad']['location'].get('uf',''),
+                    'cep': initial['ad']['location'].get('zipcode',''),
+                    'preco': meta[0]['page']['adDetail'].get('price',''),
+                    'area_privativa': meta[0]['page']['adDetail'].get('size',''),
+                    'quartos': meta[0]['page']['adDetail'].get('rooms',''),
+                    'banheiros': meta[0]['page']['adDetail'].get('bathrooms',''),
+                    'garagens': meta[0]['page']['adDetail'].get('garage_spaces',''),
                     'iptu': iptu,
                     'taxa_condominio': taxa_condominio,
                     'caracteristicas_imovel': meta[0]['page']['adDetail']['re_features'] if 're_features' in meta[0]['page']['adDetail'] else '',
@@ -109,13 +112,16 @@ class Olx:
                     'professional': initial['ad']['professionalAd'],
                     'url': url,
                 }
-            except:
-                pass
-
+            except Exception as e:
+                print(f'Erro ao criar dados : {e}', url)
+                return
+                
+            # print(data)
             self.data_json(data)
+          
             #
-            print(data)          
-        return None
+       
+        return 
 
     def formatar_data(self, data_str, formato="%d/%m/%Y %H:%M", fuso_horario=timezone(timedelta(hours=-3))):
         # Converter a string para um objeto datetime
@@ -135,12 +141,12 @@ class Olx:
                 data = data.split('}})')[0]
                 if 'pageType' in data:
                     return json.loads(data)                   
-        return None
+        return 
 
     def scrap_initial_script(self, html):
         scripts = html.xpath('//*[@id="initial-data"]')
         script_data = etree.tostring(scripts[0], encoding='unicode', method='html', pretty_print=True)
-        script_data = script_data.split("data-json='")[1].split("'></script>")[0]
+        script_data = script_data.split("data-json='")[1].split("'></script>")[0].replace('&lt;br&gt;','')
         return json.loads(script_data)
     
     def data_json(self,data):
